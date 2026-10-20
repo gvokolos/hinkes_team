@@ -83,6 +83,7 @@ def load_iws_data(filepath):
     df["DOY"] = df["Decimal_DOY"].astype(int)
     return df
 
+
 def audit_all_files_in_folder(folder_path):
     records = []
     rh_cols = [f"RH_{h}m" for h in ["8.0", "4.0", "2.0", "1.0", "0.5"]]
@@ -177,6 +178,7 @@ def audit_all_files_in_folder(folder_path):
 
     return pd.DataFrame(records)
 
+
 # FILTERING
 def filter_profile_with_table(df, ws_limit=2.0):
     rh_cols = [f"RH_{h}m" for h in ["8.0", "4.0", "2.0", "1.0", "0.5"]]
@@ -253,6 +255,7 @@ def filter_profile_with_table(df, ws_limit=2.0):
     })
 
     return df_final, pd.DataFrame(steps), df3
+
 
 # SCRIPT
 def main():
@@ -346,6 +349,8 @@ def main():
     fit_records = []
 
     for doy, grp in df_clean.groupby("DOY"):
+        date_str = doy_to_datetime(2026, doy).strftime('%Y-%m-%d')
+
         mean_ws = grp[ws_cols].mean().values
         slope, intercept, r_val, _, _ = linregress(ln_z, mean_ws)
         u_star = slope * KAPPA
@@ -355,8 +360,8 @@ def main():
         sl_t, _, r_t, _, _ = linregress(HEIGHTS, mean_t)
 
         fit_records.append({
-            "Category": "Daily DOY",
-            "Group": f"DOY {doy}",
+            "Category": "Daily Date",
+            "Group": date_str,
             "N_Rows": len(grp),
             "WS_Log_R2": round(r_val ** 2, 4),
             "u_star (m/s)": round(u_star, 4),
@@ -368,7 +373,7 @@ def main():
         pts = ax.plot(mean_ws, HEIGHTS, marker="o", linestyle="", alpha=0.7)
         c = pts[0].get_color()
         ax.plot(slope * np.log(z_smooth) + intercept, z_smooth, color=c,
-                label=f"DOY {doy} ($R^2$={r_val ** 2:.3f}, $z_0$={z0:.3f}m)")
+                label=f"{date_str} ($R^2$={r_val ** 2:.3f}, $z_0$={z0:.3f}m)")
 
     mean_ws_all = df_clean[ws_cols].mean().values
     sl_all, int_all, r_all, _, _ = linregress(ln_z, mean_ws_all)
@@ -410,14 +415,15 @@ def main():
     fig, ax = plt.subplots(figsize=(8, 8))
 
     for doy, grp in df_clean.groupby("DOY"):
+        date_str = doy_to_datetime(2026, doy).strftime('%Y-%m-%d')
+
         mean_t = grp[t_cols].mean().values
-        # Logarithmic fit for temperature: T(z) = (theta_* / kappa) * ln(z / z0t) + T_ref
         slope_t, intercept_t, r_val_t, _, _ = linregress(ln_z, mean_t)
 
         pts = ax.plot(mean_t, HEIGHTS, marker="o", linestyle="", alpha=0.7)
         c = pts[0].get_color()
         ax.plot(slope_t * np.log(z_smooth) + intercept_t, z_smooth, color=c,
-                label=f"DOY {doy} ($R^2$={r_val_t ** 2:.3f})")
+                label=f"{date_str} ($R^2$={r_val_t ** 2:.3f})")
 
     mean_t_all = df_clean[t_cols].mean().values
     sl_t_all, int_t_all, r_all_t, _, _ = linregress(ln_z, mean_t_all)
@@ -434,7 +440,7 @@ def main():
     ax.set_ylabel("Height (m) - Log Scale")
     ax.set_title("Temperature Log-Profile Fits")
     ax.grid(True, ls="--", alpha=0.4)
-    ax.legend(loc="lower right")
+    ax.legend(loc="lower left")
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT_DIR, "2b_temp_log_profile_fits.png"), dpi=300)
     plt.show()
@@ -446,7 +452,7 @@ def main():
         default="Neutral"
     )
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 6))
+    fig, ax = plt.subplots(figsize=(8, 6))
     colors = {"Unstable": "tab:red", "Neutral": "tab:green", "Stable": "tab:blue"}
 
     for state in ["Unstable", "Neutral", "Stable"]:
@@ -473,48 +479,36 @@ def main():
             "dT_dz (°C/m)": round(sl_t, 4)
         })
 
-        axes[0].scatter(ws_prof, HEIGHTS, color=colors[state], s=50, zorder=5)
-        axes[0].plot(sl_w * np.log(z_smooth) + int_w, z_smooth, "-", color=colors[state], lw=2,
-                     label=f"{state} (n={len(sub)}, $R^2$={r_w ** 2:.3f}, $z_0$={z0_s:.3f}m)")
+        ax.scatter(t_prof, HEIGHTS, color=colors[state], marker="s", s=50, zorder=5)
+        ax.plot(sl_t * z_smooth + int_t, z_smooth, "-", color=colors[state], lw=2,
+                label=f"{state} ($dT/dz$={sl_t:+.3f} °C/m, $R^2$={r_t ** 2:.3f})")
 
-        axes[1].scatter(t_prof, HEIGHTS, color=colors[state], marker="s", s=50, zorder=5)
-        axes[1].plot(sl_t * z_smooth + int_t, z_smooth, "-", color=colors[state], lw=2,
-                     label=f"{state} ($dT/dz$={sl_t:+.3f} °C/m, $R^2$={r_t ** 2:.3f})")
-
-    axes[0].set_yscale("log")
-    axes[0].set_yticks(HEIGHTS)
-    axes[0].set_yticks([], minor=True)
-    axes[0].get_yaxis().set_major_formatter(plt.ScalarFormatter())
-    axes[0].set_xlabel("Mean Wind Speed (m/s)")
-    axes[0].set_ylabel("Height (m) - Log Scale")
-    axes[0].set_title("Wind Profiles by Stability")
-    axes[0].grid(True, ls="--", alpha=0.4)
-    axes[0].legend(loc="lower right", fontsize=9)
-
-    axes[1].axvline(0, color="k", ls=":", alpha=0.5)
-    axes[1].set_yticks(HEIGHTS, [str(h) for h in HEIGHTS])
-    axes[1].set_xlabel(r"Temperature Difference $T(z) - T(0.5\mathrm{m})$ (°C)")
-    axes[1].set_ylabel("Height (m) - Linear Scale")
-    axes[1].set_title("Temperature Profiles by Stability")
-    axes[1].grid(True, alpha=0.3)
-    axes[1].legend(loc="best", fontsize=9)
+    ax.axvline(0, color="k", ls=":", alpha=0.5)
+    ax.set_yticks(HEIGHTS, [str(h) for h in HEIGHTS])
+    ax.set_xlabel(r"Temperature Difference $T(z) - T(0.5\mathrm{m})$ (°C)")
+    ax.set_ylabel("Height (m) - Linear Scale")
+    ax.set_title("Temperature Profiles by Stability")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best", fontsize=9)
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT_DIR, "3_stability_profiles.png"), dpi=300)
     plt.show()
 
     def get_sector(wd):
         if 45 < wd <= 135:
-            return "East (45°–135°)"
+            return "East"
         elif 135 < wd <= 225:
-            return "South (135°–225°)"
+            return "S"
         elif 225 < wd <= 270:
-            return "SW–West (225°–270°)"
+            return "SWW"
         else:
-            return "WNW (270°–315°)"
+            return "WNW"
 
     df_clean["Sector"] = df_clean["WD_8.0m"].apply(get_sector)
     fig, ax = plt.subplots(figsize=(8, 7))
 
+    # 1. Calculate all sector data and store in a list
+    sector_plots = []
     for sec, grp in df_clean.groupby("Sector"):
         if len(grp) < 3:
             continue
@@ -535,10 +529,20 @@ def main():
             "dT_dz (°C/m)": round(sl_t_s, 4)
         })
 
-        pts = ax.plot(ws_sec, HEIGHTS, marker="o", linestyle="", markersize=7)
+        sector_plots.append({
+            "sec": sec, "n": len(grp), "ws_sec": ws_sec,
+            "sl_s": sl_s, "int_s": int_s, "r_s": r_s, "z0_sec": z0_sec
+        })
+
+    # 2. Sort the list by z0 (lowest to highest)
+    sector_plots_sorted = sorted(sector_plots, key=lambda x: x["z0_sec"])
+
+    # 3. Plot them in the sorted order so the legend matches
+    for p in sector_plots_sorted:
+        pts = ax.plot(p["ws_sec"], HEIGHTS, marker="o", linestyle="", markersize=7)
         c = pts[0].get_color()
-        ax.plot(sl_s * np.log(z_smooth) + int_s, z_smooth, lw=2, color=c,
-                label=f"{sec} (n={len(grp)}, $R^2$={r_s ** 2:.3f}, $z_0$={z0_sec:.3f}m)")
+        ax.plot(p["sl_s"] * np.log(z_smooth) + p["int_s"], z_smooth, lw=2, color=c,
+                label=f"{p['sec']} (n={p['n']}, $R^2$={p['r_s'] ** 2:.3f}, $z_0$={p['z0_sec']:.3f}m)")
 
     ax.set_yscale("log")
     ax.set_yticks(HEIGHTS)
@@ -546,13 +550,13 @@ def main():
     ax.get_yaxis().set_major_formatter(plt.ScalarFormatter())
     ax.set_xlabel("Mean Wind Speed (m/s)")
     ax.set_ylabel("Height (m) - Log Scale")
-    ax.set_title("Wind Speed Log-Profiles by Fetch Sector")
+    ax.set_title("Wind Profiles by Fetch Sector")
     ax.grid(True, ls="--", alpha=0.4)
     ax.legend(loc="lower right")
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT_DIR, "4_fetch_sector_profiles.png"), dpi=300)
     plt.show()
-
+    
     df_fits = pd.DataFrame(fit_records)
     df_fits.to_csv(os.path.join(OUTPUT_DIR, "stats_4_profile_fits_summary.csv"), index=False)
     print("\n[TABLE 4] SUMMARY OF ALL LOG-WIND & LINEAR-TEMPERATURE PROFILE FITS:")
